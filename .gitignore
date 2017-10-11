@@ -1,0 +1,6 @@
+opvault_reader
+libopvault
+build
+node_modules
+opvault.db
+onepassword_data

@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "outDir": "build",
+    "moduleResolution": "node"
+  },
+  "files": ["src/cli.ts"]
+}
