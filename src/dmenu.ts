@@ -1,9 +1,13 @@
 const spawn = require('child_process').spawn;
 
+type DmenuItem<T> = {label: string, data: T};
+
 export default class Dmenu<T> {
   private proc;
   private itemByLabel : {[label:string]:T} = {};
   private itemCount = 0;
+  private firsts : DmenuItem<T>[] = [];
+  private rests : DmenuItem<T>[] = [];
 
   constructor() {
     this.proc = spawn('/usr/bin/dmenu', ['-i']);
@@ -15,13 +19,23 @@ export default class Dmenu<T> {
     });
   }
 
-  add(_label:string, data:T) {
-    let label = this.addItem(_label, data);
+  private _add(item:DmenuItem<T>) {
+    let label = this.addItem(item.label, item.data);
     this.proc.stdin.write(label.trim()+"\n")
     this.itemCount++;
   }
 
+  add(label:string, data:T) {
+    this.rests.push({ label, data });
+  }
+
+  addFirst(label:string, data:T) {
+    this.firsts.push({ label, data });
+  }
+
   done() {
+    this.firsts.forEach(item=>this._add(item));
+    this.rests.forEach(item=>this._add(item));
     this.proc.stdin.end()
     if (this.itemCount === 0) {
       this.proc.kill();

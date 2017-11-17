@@ -5,6 +5,10 @@ let itemByTitle : {[title:string]:BandEntry} = {};
 
 import Dmenu from './dmenu';
 
+type ButtonData = { label:string, value:string }
+type ButtonMap = { [id: number]: ButtonData }
+type ButtonCallback = (b:ButtonData)=>void;
+
 interface Field {
   name: string;
   value: string;
@@ -35,63 +39,76 @@ interface BandEntry {
   }
 }
 
-let dmenu = new Dmenu<BandEntry>();
 
 let binPath = __dirname+"/../opvault_reader"
 
-const vault = spawn(binPath)
-vault.stdout.setEncoding('utf-8');
-vault.stderr.setEncoding('utf-8');
-vault.stderr.pipe(process.stderr);
-vault.stdout
-  .pipe(JSONStream.parse())
-  .on('data', (data:BandEntry)=> {
-    if (data.data.fields) {
-      dmenu.add(data.overview.title, data)
-    } else {
-      // ignore these for now, they are not logins
-    }
-  })
-  .on('end', ()=>dmenu.done())
 
-type ButtonData = { label:string, value:string }
-type ButtonMap = { [id: number]: ButtonData }
-type ButtonCallback = (b:ButtonData)=>void;
+async function main() {
+  let dmenu = new Dmenu<BandEntry>();
+  //dmenu.add(JSON.stringify(process.argv), null)
+  let xtitle = await getXtitle();
 
-dmenu.setCallback((title, item)=>{
-  let overview = item.overview;
-  let data = item.data
-  let buttons : ButtonMap = {};
-  let passwordBtn : ButtonData = null;
+  const vault = spawn(binPath)
+  vault.stdout.setEncoding('utf-8');
+  vault.stderr.setEncoding('utf-8');
+  vault.stderr.pipe(process.stderr);
+  vault.stdout
+    .pipe(JSONStream.parse())
+    .on('data', (data:BandEntry)=> {
+      let regexp = new RegExp(data.overview.title, 'i');
+      if (xtitle.match(regexp)) {
+        dmenu.addFirst(data.overview.title, data)
+      } else if (data.data.fields) {
+        dmenu.add(data.overview.title, data)
+      } else {
+        // ignore these for now, they are not logins
+      }
+    })
+    .on('end', ()=>dmenu.done())
 
-  data.fields.filter(f=>f.designation).map((f,i)=>{
-    let btn = {label: f.designation, value: f.value};
-    buttons[i] = btn;
-    if (btn.label === "password") {
-      passwordBtn = btn;
-    }
-  })
+  dmenu.setCallback((title, item)=>{
+    let overview = item.overview;
+    let data = item.data
+    let buttons : ButtonMap = {};
+    let usernameBtn : ButtonData = null;
+    let passwordBtn : ButtonData = null;
 
+    data.fields.filter(f=>f.designation).map((f,i)=>{
+      let btn = {label: f.designation, value: f.value};
+      buttons[i] = btn;
+      if (btn.label === "username") {
+        usernameBtn = btn;
+      }
+      if (btn.label === "password") {
+        passwordBtn = btn;
+      }
+    })
 
-  selectWithDmenu(buttons, (btn)=>{
-    let dmenu = new Dmenu<any>();
-    if (btn.label === "username" && passwordBtn.label === "password") {
-      dmenu.add("autologin", null);
-    }
-    dmenu.add("type", null)
-    dmenu.add("copy", null);
-    dmenu.done();
-    dmenu.setCallback((sel)=>{
-      switch (sel) {
-        case "copy": return saveToClipboard(btn.value);
-        case "type": return typeWithXdotool([btn.value]);
-        case "autologin": {
-          typeWithXdotool([btn.value, "\t", passwordBtn.value, "\n"]);
-        }
+    selectWithDmenu(buttons, (dmenu) => {
+      if (usernameBtn && passwordBtn) {
+        dmenu.addFirst("autologin", {
+          label: 'autologin',
+          value: usernameBtn.value+"\t"+passwordBtn.value+"\n"
+        });
+      }
+    }, (btn)=>{
+      if (btn.label === "autologin") {
+        typeWithXdotool([btn.value]);
+      } else {
+        let dmenu = new Dmenu<any>();
+        dmenu.add("type", null)
+        dmenu.add("copy", null);
+        dmenu.done();
+        dmenu.setCallback((sel)=>{
+          switch (sel) {
+            case "copy": return saveToClipboard(btn.value);
+            case "type": return typeWithXdotool([btn.value]);
+          }
+        });
       }
     });
   });
-});
+}
 
 function saveToClipboard(str: string) {
   let xclip = spawn('/usr/bin/xclip')
@@ -100,6 +117,15 @@ function saveToClipboard(str: string) {
   xclip.stdin.end();
   xclip.on('exit', ()=>{
     process.exit(0);
+  });
+}
+
+async function getXtitle() : Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    let xtitle = spawn('/usr/bin/xtitle', []);
+    let out = "";
+    xtitle.stdout.on('data', (data)=> out+=data.toString() );
+    xtitle.on('exit', ()=> resolve(out) );
   });
 }
 
@@ -123,12 +149,20 @@ async function typeWithXdotool(strings:string[]) {
   process.exit(0);
 }
 
-function selectWithDmenu(buttons: ButtonMap, callback:ButtonCallback) : void {
+function selectWithDmenu(
+  buttons: ButtonMap,
+  beforeDone: (dmenu:Dmenu<ButtonData>)=>void,
+  callback:ButtonCallback,
+):
+void {
   let dmenu = new Dmenu<ButtonData>();
   for (let id in buttons) {
     let btn = buttons[id]
     dmenu.add(btn.label, btn);
   }
+  beforeDone(dmenu);
   dmenu.done();
   dmenu.setCallback((title, btn)=> callback(btn))
 }
+
+main();
