@@ -62,44 +62,65 @@ dmenu.setCallback((title, item)=>{
   let overview = item.overview;
   let data = item.data
   let buttons : ButtonMap = {};
+  let passwordBtn : ButtonData = null;
 
   data.fields.filter(f=>f.designation).map((f,i)=>{
-    buttons[i+10] = {label: f.designation, value: f.value};
+    let btn = {label: f.designation, value: f.value};
+    buttons[i] = btn;
+    if (btn.label === "password") {
+      passwordBtn = btn;
+    }
   })
+
 
   selectWithDmenu(buttons, (btn)=>{
     let dmenu = new Dmenu<any>();
+    if (btn.label === "username" && passwordBtn.label === "password") {
+      dmenu.add("autologin", null);
+    }
     dmenu.add("type", null)
     dmenu.add("copy", null);
     dmenu.done();
     dmenu.setCallback((sel)=>{
       switch (sel) {
-        case "copy": return saveToClipboard(btn);
-        case "type": return typeWithXdotool(btn);
+        case "copy": return saveToClipboard(btn.value);
+        case "type": return typeWithXdotool([btn.value]);
+        case "autologin": {
+          typeWithXdotool([btn.value, "\t", passwordBtn.value, "\n"]);
+        }
       }
     });
   });
 });
 
-function saveToClipboard(btn: ButtonData) {
+function saveToClipboard(str: string) {
   let xclip = spawn('/usr/bin/xclip')
   xclip.stdin.setEncoding('utf-8');
-  xclip.stdin.write(btn.value)
+  xclip.stdin.write(str)
   xclip.stdin.end();
   xclip.on('exit', ()=>{
     process.exit(0);
   });
 }
 
-function typeWithXdotool(btn: ButtonData) {
-  let xdotool = spawn('/usr/bin/xdotool', [
-    'type', 
-    '--delay', '100',
-    btn.value
-  ]);
-  xdotool.on('exit', ()=>{
-    process.exit(0);
+async function typeOnKeyboardSync(str) {
+  return new Promise((resolve, reject) => {
+    let xdotool = spawn('/usr/bin/xdotool', [
+      'type', 
+      '--delay', '100',
+      str
+    ]);
+    xdotool.on('exit', ()=>{
+      resolve();
+    });
   });
+}
+
+async function typeWithXdotool(strings:string[]) {
+  for (let i=0;i<strings.length;i++) {
+    await typeOnKeyboardSync(strings[i]);
+  }
+  process.exit(0);
 }
 
 function selectWithDmenu(buttons: ButtonMap, callback:ButtonCallback) : void {
@@ -110,26 +131,4 @@ function selectWithDmenu(buttons: ButtonMap, callback:ButtonCallback) : void {
   }
   dmenu.done();
   dmenu.setCallback((title, btn)=> callback(btn))
-}
-
-function selectWithYad(title:string, buttons: ButtonMap, callback:ButtonCallback) : void {
-  let yadOpts = [
-    `--image=dialog-password`,
-    `--title=${title}`,
-    `--text=Click a field from ${title} to copy to your pasteboard:`,
-    ...Object.keys(buttons).map((k)=>
-      `--button=${buttons[k].label}:${k}`
-    ),
-    `--button=Close:1`
-  ];
-  let yad = spawn('/usr/bin/yad', yadOpts);
-  yad.on('exit', (exitStatus)=>{
-    let index = exitStatus;
-    let btn = buttons[index];
-    if (btn) {
-      callback(btn);
-    } else {
-      process.exit(0);
-    }
-  });
 }

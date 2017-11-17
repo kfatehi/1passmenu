@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
     "outDir": "build",
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "lib": [
+      "es2015"
+    ]
   },
   "files": ["src/cli.ts"]
 }
