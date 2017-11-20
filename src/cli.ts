@@ -5,6 +5,8 @@ let itemByTitle : {[title:string]:BandEntry} = {};
 
 import Dmenu from './dmenu';
 
+const fuzzy = require('fuzzy.js');
+
 type ButtonData = { label:string, value:string }
 type ButtonMap = { [id: number]: ButtonData }
 type ButtonCallback = (b:ButtonData)=>void;
@@ -49,6 +51,7 @@ async function main() {
   let xtitle = await getXtitle();
 
   const vault = spawn(binPath)
+  let matches = [];
   vault.stdout.setEncoding('utf-8');
   vault.stderr.setEncoding('utf-8');
   vault.stderr.pipe(process.stderr);
@@ -59,12 +62,20 @@ async function main() {
       if (xtitle.match(regexp)) {
         dmenu.addFirst(data.overview.title, data)
       } else if (data.data.fields) {
-        dmenu.add(data.overview.title, data)
+        let match = fuzzy(xtitle, data.overview.title)
+        match.data = data;
+        matches.push(match);
       } else {
         // ignore these for now, they are not logins
       }
     })
-    .on('end', ()=>dmenu.done())
+    .on('end', ()=>{
+      matches.sort((a,b)=>a.score < b.score ? 1 : -1).forEach((match)=>{
+        dmenu.add(match.query, match.data);
+      });
+      // dmenu.addFirst( rebuild opvault db )
+      dmenu.done()
+    })
 
   dmenu.setCallback((title, item)=>{
     let overview = item.overview;
